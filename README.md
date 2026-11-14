@@ -21,9 +21,22 @@ The first launch of this version automatically imports existing single-account F
 
 The header and browser icon use the purple Forge-inspired emblem.
 
-## Merge-recipe accuracy
+## Shop Advisor and verified tiers
 
-The source screenshots establish the required finished items and their amounts. Official Forge instructions establish two-identical-item merging. The preloaded jewelry, transport and hourglass chains are **suggested, editable starting points**. Confirm the precise tier order using the game's item info (i) panel. Other recipes can be added there, including additional intermediate resources. Generator drops, cooldowns and energy costs are not estimated without verified data.
+The **Shop Advisor** records two real shop screenshots (Latest / Previous) including each pictured item, its price, currency and purchase limit. Purchase logs and shop selection are saved separately for each game account. It estimates unmet resources and crafting merges for the remaining 10-step Soul Loop, and shows how many of a lower tier would be needed to make a finished-tier item.
+
+The user-supplied in-game info panels confirm these chain orders:
+- **Lumber:** seven tier images; tier 6 planks are the cycle resource; tiers 1–5 feed into it, tier 7 is a generator-style item.
+- **Cabin:** four tiers, with the red barn as tier 4.
+- **Broken Hourglass:** six tiers, from tier 1 sand through tier 5 hourglass, with tier 6 a generator-style item.
+
+Chain item names such as `Lumber T4` and `Cabin T2` are descriptive tier labels, not guaranteed official game item names. Recipe quantities use the Forge two-identical-items-to-one-next-tier rule. An older app default that merged sand directly into the final hourglass is corrected automatically unless the user customized it. Custom recipes and previously logged inventories are preserved.
+
+Gem and energy prices are **not interchangeable**. The displayed cost per finished-tier equivalent assumes repeated merges and excludes shop quantity limits, generator costs, cooldowns and other crafting inputs. This is an indicator of resource efficiency, not a guarantee to buy an item.
+
+## Other merge recipes
+
+Jewelry and transport chains are retained as **editable suggestions** until their item info panels are confirmed. The 54 Steel Pass stages are image-based and do not yet provide machine-readable quest requirements for Shop Advisor scoring.
 
 ## Enable GitHub Pages
 
