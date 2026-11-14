@@ -594,7 +594,12 @@ const VERIFIED_RECIPES={
   'Lumber T5':'Lumber T4','Lumber':'Lumber T5',
   'Cabin T2':'Cabin T1','Cabin T3':'Cabin T2','Barn':'Cabin T3',
   'Broken Hourglass':'Sands of time','Hourglass T3':'Broken Hourglass',
-  'Hourglass T4':'Hourglass T3','Hourglass':'Hourglass T4'
+  'Hourglass T4':'Hourglass T3','Hourglass':'Hourglass T4',
+  // In-game Tools chain confirmed by the user, from lowest to highest.
+  'Apprentice’s Tools':'Novice’s Tools',
+  'Artisan’s Tools':'Apprentice’s Tools',
+  'Artificer’s Tools':'Artisan’s Tools',
+  'Master Crafter’s Tools':'Artificer’s Tools'
 };
 const INITRECIPES={
  'Prism':'Jewel','Jewelry box':'Prism',
@@ -602,17 +607,25 @@ const INITRECIPES={
  ...VERIFIED_RECIPES
 };
 const VERIFIABLE_EXTRAS=['Sands of time','Lumber T1','Lumber T2','Lumber T3','Lumber T4','Lumber T5',
- 'Cabin T1','Cabin T2','Cabin T3','Broken Hourglass','Hourglass T3','Hourglass T4'];
+ 'Cabin T1','Cabin T2','Cabin T3','Broken Hourglass','Hourglass T3','Hourglass T4',
+ 'Novice’s Tools','Apprentice’s Tools','Artisan’s Tools','Artificer’s Tools','Master Crafter’s Tools'];
 function upgradeVerifiedRecipes(data){
  if(!data||typeof data!=='object')return;
  if(!data.recipes||typeof data.recipes!=='object'||Array.isArray(data.recipes))data.recipes={};
- if(data.verifiedTierChainsV1)return;
- for(const [output,input] of Object.entries(VERIFIED_RECIPES)){
-  // Older versions incorrectly mapped the tier-5 hourglass directly to sand.
-  // Preserve any user-customized value rather than replacing it.
-  if(!(output in data.recipes)||(output==='Hourglass' && data.recipes[output]==='Sands of time'))data.recipes[output]=input;
+ if(!data.verifiedTierChainsV1){
+  for(const [output,input] of Object.entries(VERIFIED_RECIPES)){
+   // Correct the old sand-to-finished-hourglass shortcut; preserve user edits.
+   if(!(output in data.recipes)||(output==='Hourglass' && data.recipes[output]==='Sands of time'))data.recipes[output]=input;
+  }
+  data.verifiedTierChainsV1=true;
  }
- data.verifiedTierChainsV1=true;
+ // Existing accounts from the earlier verified-tier release must also get Tools.
+ if(!data.verifiedToolsChainV1){
+  for(const [output,input] of Object.entries(VERIFIED_RECIPES)){
+   if(output.endsWith('Tools') && !(output in data.recipes))data.recipes[output]=input;
+  }
+  data.verifiedToolsChainV1=true;
+ }
 }
 
 const MAIN=ITEMS.map(o=>o.name);
@@ -981,4 +994,128 @@ const responsiveStyle=document.createElement('style');responsiveStyle.textConten
 render();
 })();
 
+</script><script>
+/* Account-aware locked Tools shortcut advisor. Distinct from rotating shop offers. */
+(()=>{
+'use strict';
+const TOOLS=["Novice’s Tools","Apprentice’s Tools","Artisan’s Tools","Artificer’s Tools","Master Crafter’s Tools"];
+const OFFERS=[{id:'artisan',tier:3,price:40,name:TOOLS[2]}, {id:'master',tier:5,price:200,name:TOOLS[4]}];
+const clamp=(v,min,max)=>Math.max(min,Math.min(max,Math.trunc(Number(v)||0)));
+const savedGoal=()=>{
+ const g=state.toolsGoal&&typeof state.toolsGoal==='object'?state.toolsGoal:{};
+ return {tier:clamp(g.tier||5,1,5),count:clamp(g.count,0,30)};
+};
+const counts=()=>{
+ const raw=state.craftExtra?.extraOwned||{};
+ return TOOLS.map(n=>clamp(raw[n],0,99999));
+};
+const setCount=(tier,num)=>{
+ if(!state.craftExtra||typeof state.craftExtra!=='object')state.craftExtra={};
+ if(!state.craftExtra.extraOwned||typeof state.craftExtra.extraOwned!=='object')state.craftExtra.extraOwned={};
+ state.craftExtra.extraOwned[TOOLS[tier-1]]=clamp(num,0,99999);
+ save();render();
+};
+const ownCredits=(tier)=>counts().reduce((s,n,i)=>(i+1<=tier?s+n/(2**(tier-i-1)):s),0);
+const stats=()=>{
+ const g=savedGoal(),have=ownCredits(g.tier);
+ return {...g,have,ready:Math.floor(have+1e-8),remaining:Math.max(0,g.count-have)};
+};
+const unit=(offer,tier)=> offer.tier<=tier?1/(2**(tier-offer.tier)):0;
+function rating(o,st){
+ if(st.count===0)return {label:'SET GOAL',kind:'neutral',details:'Select the tool tier and quantity needed before rating this unlock.'};
+ if(st.remaining<=0)return {label:'COVERED',kind:'covered',details:'Your recorded tools already meet this goal.'};
+ const equiv=unit(o,st.tier);
+ if(!equiv)return {label:'SKIP',kind:'skip',details:'This is a higher tier than the selected goal; the item cannot be broken down.'};
+ const perTarget=o.price/equiv;
+ if(st.have+equiv>=st.count-1e-8)return {label:'FINISH GOAL',kind:'finish',details:'This unlock is enough to reach the selected tools target.'};
+ const other=OFFERS.find(x=>x.id!==o.id);
+ const otherEq=unit(other,st.tier);
+ const lowerCost=otherEq>0 && perTarget<other.price/otherEq;
+ return {label:lowerCost?'GOOD VALUE':'PARTIAL',kind:lowerCost?'good':'partial',
+  details:(lowerCost?'Lower energy per target-tier equivalent; ':'')+
+   `adds ${equiv<1?(equiv*100).toFixed(0)+'%':'1'} of one target-tier item.`};
+}
+function logged(id){return clamp(state.toolUnlocks?.[id],0,9999)}
+function setUnlock(id,delta){
+ const offer=OFFERS.find(o=>o.id===id);if(!offer)return;
+ const before=logged(id),after=clamp(before+delta,0,9999),actual=after-before;
+ if(!actual)return;
+ if(!state.toolUnlocks||typeof state.toolUnlocks!=='object')state.toolUnlocks={};
+ state.toolUnlocks[id]=after;
+ // Store unlocked tools in the same per-account item inventory used by Make.
+ const old=counts()[offer.tier-1];
+ setCount(offer.tier,old+actual);
+}
+const num=n=>Math.round(n*100)/100;
+function offerCard(o,st){
+ const r=rating(o,st),eq=unit(o,st.tier);
+ const txt=st.count===0?'Set target':eq===0?'Not usable for chosen tier':
+   `${num(o.price/eq)} energy per ${TOOLS[st.tier-1]} equivalent`;
+ return `<div class="tool-offer ${r.kind}">
+   <div class="tool-offer-top"><span class="tool-tier">T${o.tier}</span><div><b>${o.name}</b><small>${o.price} ⚡ to unlock · board shortcut</small></div><span class="tool-rating ${r.kind}">${r.label}</span></div>
+   <p>${r.details}</p><div class="tool-efficiency">${txt}</div>
+   <div class="tool-actions"><span>Recorded: <b>${logged(o.id)}</b></span>
+     <button type="button" data-toolundo="${o.id}" ${logged(o.id)<1?'disabled':''}>− Undo</button>
+     <button type="button" data-toolunlock="${o.id}">+ Log unlock</button></div>
+ </div>`;
+}
+function toolMarkup(){
+ const st=stats(),inventory=counts(),expanded=state.toolsOpen===undefined?(innerHeight>370):Boolean(state.toolsOpen);
+ const available=st.count>0?`Have ${num(st.have)} / ${st.count} target equivalents`:'Select a goal for personalized ratings';
+ const rows=TOOLS.map((n,i)=>`<div class="tool-stock"><span>T${i+1} ${n}</span>
+    <button type="button" data-toolminus="${i+1}">−</button><input type="number" min="0" max="99999" value="${inventory[i]}" data-toolcount="${i+1}" inputmode="numeric" aria-label="Owned ${n}">
+    <button type="button" data-toolplus="${i+1}">+</button></div>`).join('');
+ return `<details class="tools-shortcut" id="toolsShortcut" ${expanded?'open':''}>
+ <summary><span><b>Locked Tools shortcuts</b><small>Artisan 40 ⚡ · Master Crafter 200 ⚡</small></span>
+ <span class="tool-goalflag">${st.count?`${num(st.have)}/${st.count} ready`:'Set goal'}</span></summary>
+ <div class="tool-content">
+  <p class="tool-hint">Board unlocks, not repeatable shop purchases. Unlocking one item may have a separate timer. Ratings use your account’s manually entered tools goal and inventory.</p>
+  <div class="tool-controls"><label>Target tool<select id="toolsTarget">${TOOLS.map((n,i)=>`<option value="${i+1}" ${st.tier===i+1?'selected':''}>T${i+1} · ${n}</option>`).join('')}</select></label>
+   <label>Quantity needed<input id="toolsQty" type="number" min="0" max="30" inputmode="numeric" value="${st.count}"></label></div>
+  <div class="tool-goalline"><strong>${available}</strong>${st.count&&st.ready>=st.count?' · Covered':st.count?' · Short '+num(st.remaining):''}</div>
+  <div class="tool-offers">${OFFERS.map(o=>offerCard(o,st)).join('')}</div>
+  <p class="tool-comparison"><strong>Example · T5:</strong> 4 Artisan’s Tools × 40 ⚡ = 160 ⚡ versus 1 Master Crafter’s Tools at 200 ⚡. That saves 40 energy only if four separate Artisan’s Tools unlock opportunities are actually available and the merges are possible. This screenshot confirms one example of each, not unlimited availability.</p>
+  <details class="tool-inventory"><summary>Track tools in inventory</summary><div class="tool-stocks">${rows}</div></details>
+  <p class="tool-hint">The original Soul Loop reference does not list Tools. Set your target above when a Tools quest appears; the 54 Steel Pass cards are image-based and are not automatically counted.</p>
+ </div></details>`;
+}
+function mount(){
+ const s=document.getElementById('contentScreen');if(!s||state.view!=='shop')return;
+ const anchor=s.querySelector('.offer-rotation')||s.querySelector('.offer-status');
+ if(!anchor)return;
+ anchor.insertAdjacentHTML('afterend',toolMarkup());
+ const box=s.querySelector('#toolsShortcut');
+ box.addEventListener('toggle',()=>{state.toolsOpen=box.open;save()});
+ const g=s.querySelector('#toolsTarget'),q=s.querySelector('#toolsQty');
+ g.onchange=()=>{state.toolsGoal={...savedGoal(),tier:clamp(g.value,1,5)};save();render()};
+ q.onchange=()=>{state.toolsGoal={...savedGoal(),count:clamp(q.value,0,30)};save();render()};
+ s.querySelectorAll('[data-toolunlock]').forEach(b=>b.onclick=()=>setUnlock(b.dataset.toolunlock,1));
+ s.querySelectorAll('[data-toolundo]').forEach(b=>b.onclick=()=>setUnlock(b.dataset.toolundo,-1));
+ s.querySelectorAll('[data-toolplus]').forEach(b=>b.onclick=()=>setCount(+b.dataset.toolplus,counts()[+b.dataset.toolplus-1]+1));
+ s.querySelectorAll('[data-toolminus]').forEach(b=>b.onclick=()=>setCount(+b.dataset.toolminus,counts()[+b.dataset.toolminus-1]-1));
+ s.querySelectorAll('[data-toolcount]').forEach(b=>b.onchange=()=>setCount(+b.dataset.toolcount,b.value));
+}
+const prior=window.shopView;
+window.shopView=function(){prior();mount()};
+const css=`
+.tools-shortcut{margin:9px 0 11px;background:#1b1630;border:1px solid #7956ac;border-radius:12px;color:#f6ecff;overflow:hidden}
+.tools-shortcut>summary{cursor:pointer;padding:10px;display:flex;align-items:center;justify-content:space-between;gap:7px;list-style:none}
+.tools-shortcut>summary::-webkit-details-marker{display:none}.tools-shortcut>summary span:first-child{display:flex;flex-direction:column;gap:1px}
+.tools-shortcut>summary b{font-size:13px}.tools-shortcut>summary small{font-size:11px;color:#d3b6ff}.tool-goalflag{padding:4px 8px;border-radius:999px;background:#3a225e;color:#f2d7ff;font-weight:700;font-size:11px;white-space:nowrap}
+.tool-content{padding:0 10px 10px;display:grid;gap:8px}.tool-hint{font-size:11px;color:#c9b9df;line-height:1.4;margin:0}
+.tool-controls{display:flex;align-items:end;gap:8px;flex-wrap:wrap}.tool-controls label{display:flex;flex-direction:column;gap:3px;color:#dbb8ff;font-size:11px;flex:1;min-width:140px}.tool-controls label:last-child{max-width:120px;min-width:95px}
+.tool-controls select,.tool-controls input{height:34px;border:1px solid #8266ba;background:#21143a;color:#fff;border-radius:8px;padding:5px;font:inherit;min-width:0;max-width:100%}
+.tool-goalline{background:#352153;border:1px solid #634893;padding:6px 9px;border-radius:9px;font-size:12px;color:#fff}.tool-offers{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,255px),1fr));gap:8px}
+.tool-offer{border:1px solid #6d5887;border-radius:10px;background:#24183d;padding:9px;display:flex;flex-direction:column;gap:7px}.tool-offer.finish{border-color:#89cfe8}.tool-offer.good{border-color:#d7b35c}.tool-offer.skip,.tool-offer.covered{opacity:.8}
+.tool-offer-top{display:flex;align-items:center;gap:7px;min-width:0}.tool-offer-top>div{display:flex;flex:1;min-width:0;flex-direction:column;gap:2px}.tool-offer-top b{font-size:12px}.tool-offer-top small{font-size:10px;color:#d3b6ff}.tool-tier{min-width:33px;height:33px;border:1px solid #ad86e0;display:grid;place-items:center;background:#422b69;border-radius:9px;color:#fff;font-size:11px;font-weight:900}
+.tool-rating{border:1px solid #756c8b;background:#44305a;padding:4px 6px;border-radius:6px;font-size:9px;font-weight:900;white-space:nowrap}.tool-rating.finish{background:#20536a;color:#d8f7ff;border-color:#84c7e6}.tool-rating.good{background:#735321;color:#fff0bf;border-color:#cfaa60}.tool-rating.skip{background:#37323e;color:#bbb}.tool-rating.covered{background:#224d3a;color:#dcf8e0}
+.tool-offer p{font-size:11px;line-height:1.4;color:#e1d5f4;margin:0}.tool-efficiency{font-size:11px;color:#ffd78d}.tool-actions{display:flex;align-items:center;gap:6px;margin-top:auto}.tool-actions span{font-size:10px;flex:1;white-space:nowrap}.tool-actions button,.tool-stock button{background:#493064;border:1px solid #a07cba;color:#fff;border-radius:7px;font-size:11px;padding:6px;font-weight:700}.tool-actions button:disabled,.tool-stock button:disabled{opacity:.45}
+.tool-comparison{font-size:11px;color:#e4d0ff;line-height:1.4;border-left:2px solid #ae7dd8;padding:5px 8px;background:#2a1b40;margin:0}
+.tool-inventory{border-top:1px solid #50366c;padding-top:8px}.tool-inventory>summary{font-size:12px;cursor:pointer;font-weight:700}.tool-stocks{display:grid;gap:5px;margin-top:8px}.tool-stock{display:flex;align-items:center;gap:5px;font-size:11px}.tool-stock span{flex:1;min-width:0}.tool-stock input{width:60px;border:1px solid #8465aa;color:#fff;background:#2a1a40;border-radius:6px;text-align:center;padding:5px;font:inherit}
+@media(min-width:900px){.tool-stocks{grid-template-columns:1fr 1fr}}
+@media(max-height:350px){.tools-shortcut>summary{padding:5px 9px}.tools-shortcut>summary b{font-size:12px}.tools-shortcut>summary small{font-size:10px}.tool-goalflag{padding:2px 6px}}
+`;
+const style=document.createElement('style');style.textContent=css;document.head.append(style);
+if(state.view==='shop')render();
+})();
 </script></body></html>
