@@ -21,7 +21,7 @@ The first launch of this version automatically imports existing single-account F
 
 The header and browser icon use the purple Forge-inspired emblem.
 
-## Additional locked-board shortcuts (six new offers)
+## Additional locked-board shortcuts (seven new offers)
 
 Six offers captured from user-provided Forge screenshots and added to **Shop → More locked shortcuts** (separate from rotating shop offers and the earlier Tools shortcuts):
 
@@ -33,10 +33,11 @@ Six offers captured from user-provided Forge screenshots and added to **Shop →
 | Cube | 3 | 37 | 4-tier chain (tier 4 appears as a generator) |
 | Young Bonsai | 3 | 40 | 5-tier chain |
 | Royal Tree | 6 | 300 | Generator for the early Lumber chain, yield unknown |
+| Imperial Shield | 5 | 200 | 6-tier chain; two T5s merge to the T6 Crest required in Soul Loop steps 1 and 4 |
 
-Each chain's pictured tier sequence is represented as 2-to-1 merges. Generator output is **not** falsely treated as merging into other item types. New targets, item counts, and logged unlocks are separate for each game account. The Knight Sword goal is prefilled from the outstanding Soul Loop Sword requirements; other chain targets can be entered manually.
+Each chain's pictured tier sequence is represented as 2-to-1 merges. Generator output is **not** falsely treated as merging into other item types. New targets, item counts, logged unlocks, and expired-offer flags are separate for each game account. Knight Sword and Imperial Shield default to their outstanding Soul Loop Sword and Crest requirements; other chain targets can be entered manually.
 
-These were **locked-board shortcuts** seen in screenshots, not regular recurring shop offers. They show both an energy unlock price and a countdown timer of about 1–2 minutes. Whether the timer permits free unlock is unconfirmed: the advisor notes that waiting might be better rather than automatically endorsing energy use. Price per tier-equivalent is merge arithmetic, not proven energy efficiency relative to free crafting or generator output. The images do not reveal normal crafting costs, generator rates, or offer repeatability.
+These were **locked-board shortcuts** seen in screenshots, not regular recurring shop offers. The user confirmed that **when the countdown reaches zero the locked offer disappears from the board; it does NOT become free**. The advisor warns of the purchase deadline, provides an account-specific **Mark expired / Offer returned** toggle, disables logging expired purchases, and does not treat expired offers as available. The in-game timer is not synchronized automatically. Price per tier-equivalent is merge arithmetic, not proven energy efficiency relative to free crafting or generator output. The images do not reveal normal crafting costs, generator rates, or offer repeatability.
 
 ## Locked Tools shortcut advisor
 
