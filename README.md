@@ -21,6 +21,19 @@ The first launch of this version automatically imports existing single-account F
 
 The header and browser icon use the purple Forge-inspired emblem.
 
+## Locked Tools shortcut advisor
+
+The game’s five-step Tools merge chain has been confirmed as:
+Novice’s Tools → Apprentice’s Tools → Artisan’s Tools → Artificer’s Tools → Master Crafter’s Tools.
+
+The **Shop → Locked Tools shortcuts** section compares two pictured board unlock offers:
+- Artisan’s Tools (T3): **40 energy**
+- Master Crafter’s Tools (T5): **200 energy**
+
+Four T3 tools merge into one T5, so four separate T3 unlocks would cost **160 energy versus 200 energy** for the direct T5 unlock (20% less). However, only one instance of each offer was pictured; the cheaper route may not actually be available enough times. These are locked-board rewards, **not unlimited recurring shop offers**.
+
+Set a manually tracked Tools target (tier and quantity) to enable account-specific Finish Goal / Good Value / Covered / Skip recommendations. Tool quantities and unlock logs are saved with the active game account and integrated with the Make → Recipes and base-item inventory. The 10-step Soul Loop does not request Tools and the 54 Steel Pass images do not yet have machine-readable requirements, so no Tools target is assumed automatically.
+
 ## Shop Advisor and verified tiers
 
 The **Shop Advisor** records two real shop screenshots (Latest / Previous) including each pictured item, its price, currency and purchase limit. Purchase logs and shop selection are saved separately for each game account. It estimates unmet resources and crafting merges for the remaining 10-step Soul Loop, and shows how many of a lower tier would be needed to make a finished-tier item.
