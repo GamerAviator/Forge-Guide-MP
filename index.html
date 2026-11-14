@@ -1118,4 +1118,176 @@ const css=`
 const style=document.createElement('style');style.textContent=css;document.head.append(style);
 if(state.view==='shop')render();
 })();
-</script></body></html>
+</script>
+<script>
+/* Account-aware extra board shortcuts • November 2026.
+   Source: user-provided Forge locked-item and in-game chain information screenshots.
+   NOTE: Time until unlock and generator drop rates are not known. */
+(()=>{
+'use strict';
+const BOARD_CHAINS={
+ flower:{title:'Flower', tiers:['Flower T1','Flower T2','Flower T3','Flower'], generatorTier:4,
+     yields:['Young Bonsai','Moon Fireflies'],notes:'Generator icon: produces items in Young Bonsai and Moon Fireflies lines; drop counts are not shown.'},
+ fireflies:{title:'Moon Fireflies',tiers:['Moon Fireflies T1','Moon Fireflies T2','Moon Fireflies T3','Moon Fireflies T4','Moon Fireflies T5','Moon Fireflies T6','Moon Fireflies T7'],generatorTier:7,
+     notes:'Flower generator drops early items in this chain. Stage 7 has a lightning symbol.'},
+ sword:{title:'Knight Sword',tiers:['Knight Sword T1','Knight Sword T2','Knight Sword T3','Knight Sword T4','Knight Sword T5','Knight Sword T6','Sword'],autoSoul:true,
+     notes:'The repeatable Soul Loop requires the tier-7 Sword at step 1.'},
+ cube:{title:'Cube',tiers:['Cube T1','Cube T2','Cube T3','Cube T4'],generatorTier:4,notes:'Stage 4 has a generator icon; stage 3 is the pictured 37-energy offer.'},
+ bonsai:{title:'Young Bonsai',tiers:['Young Bonsai T1','Young Bonsai T2','Young Bonsai T3','Young Bonsai T4','Young Bonsai T5'],
+     notes:'Flower generator drops early items in this chain.'},
+ tree:{title:'Royal Tree',tiers:['Royal Tree T1','Royal Tree T2','Royal Tree T3','Royal Tree T4','Royal Tree T5','Royal Tree'],generatorTier:6,
+     yields:['Lumber'],notes:'Royal Tree generates early Lumber line items; number of drops and cooldown are unknown.'}
+};
+const BOARD_OFFERS=[
+ {id:'flower_t4_80',chain:'flower',tier:4,price:80,subject:'Flower (generator)'},
+ {id:'moon_fireflies_t5_170',chain:'fireflies',tier:5,price:170,subject:'Moon Fireflies T5'},
+ {id:'knight_sword_t5_170',chain:'sword',tier:5,price:170,subject:'Knight Sword T5'},
+ {id:'cube_t3_37',chain:'cube',tier:3,price:37,subject:'Cube T3'},
+ {id:'young_bonsai_t3_40',chain:'bonsai',tier:3,price:40,subject:'Young Bonsai T3'},
+ {id:'royal_tree_t6_300',chain:'tree',tier:6,price:300,subject:'Royal Tree (generator)'}
+];
+const clampExtra=(v,lo,hi)=>Math.max(lo,Math.min(hi,Math.trunc(Number(v)||0)));
+// Make the confirmed tier chains available to Make > Recipes. Generator production
+// is NOT a merge recipe: only the 2-to-1 tier upgrades belong here.
+const KNOWN_NEW_RECIPES={};
+const NEW_ITEM_NAMES=[];
+for(const def of Object.values(BOARD_CHAINS)){
+ NEW_ITEM_NAMES.push(...def.tiers.filter(n=>!(n in ITEM_TOTAL)));
+ for(let i=1;i<def.tiers.length;i++)KNOWN_NEW_RECIPES[def.tiers[i]]=def.tiers[i-1];
+}
+for(const n of NEW_ITEM_NAMES)if(!VERIFIABLE_EXTRAS.includes(n))VERIFIABLE_EXTRAS.push(n);
+for(const n of NEW_ITEM_NAMES){if(!ALL.includes(n))ALL.push(n);if(!EXTRA.includes(n))EXTRA.push(n)}
+Object.assign(VERIFIED_RECIPES,KNOWN_NEW_RECIPES);
+Object.assign(INITRECIPES,KNOWN_NEW_RECIPES);
+function ensureKnownRecipes(){
+ if(!state.craftExtra||typeof state.craftExtra!=='object')state.craftExtra={};
+ const c=state.craftExtra;
+ if(!c.recipes||typeof c.recipes!=='object')c.recipes={};
+ if(!c.extraOwned||typeof c.extraOwned!=='object')c.extraOwned={};
+ if(!c.shortcutRecipesV1){
+  for(const [output,input] of Object.entries(KNOWN_NEW_RECIPES))if(!(output in c.recipes))c.recipes[output]=input;
+  c.shortcutRecipesV1=true;
+ }
+ if(!state.boardShortcuts||typeof state.boardShortcuts!=='object')state.boardShortcuts={};
+ if(!state.boardShortcuts.goals||typeof state.boardShortcuts.goals!=='object')state.boardShortcuts.goals={};
+ if(!state.boardShortcuts.unlocks||typeof state.boardShortcuts.unlocks!=='object')state.boardShortcuts.unlocks={};
+}
+ensureKnownRecipes();
+const priorAccountReload=window.forgeAccountReload;
+window.forgeAccountReload=function(){if(priorAccountReload)priorAccountReload();ensureKnownRecipes()};
+const data=()=>state.boardShortcuts;
+const qty=(name)=>clampExtra(name in (state.owned||{})?state.owned[name]:state.craftExtra?.extraOwned?.[name],0,99999);
+function setQty(name,v){
+ const n=clampExtra(v,0,99999);
+ if(name in ITEM_TOTAL)state.owned[name]=n;
+ else {if(!state.craftExtra.extraOwned)state.craftExtra.extraOwned={};state.craftExtra.extraOwned[name]=n}
+ save();render();
+}
+function goal(key){
+ const def=BOARD_CHAINS[key],raw=data().goals[key];
+ if(raw&&typeof raw==='object')return {tier:clampExtra(raw.tier||def.tiers.length,1,def.tiers.length),count:clampExtra(raw.count,0,30),custom:true};
+ if(def.autoSoul)return {tier:7,count:Math.max(0,remainingCount('Sword')),custom:false};
+ return {tier:BOARD_OFFERS.find(o=>o.chain===key)?.tier||def.tiers.length,count:0,custom:false};
+}
+function equivalentInventory(def,tier){
+ return def.tiers.reduce((s,n,i)=>s+(i<tier?qty(n)/(2**(tier-i-1)):0),0);
+}
+function offerStatus(o){
+ const def=BOARD_CHAINS[o.chain],g=goal(o.chain),have=equivalentInventory(def,g.tier);
+ const short=Math.max(0,g.count-have),unit=o.tier<=g.tier?1/(2**(g.tier-o.tier)):0;
+ const generator=o.tier===def.generatorTier;
+ const next=def.yields||[];
+ let label='SET GOAL',kind='unknown',info='Set a target tier and quantity for an account-specific value recommendation.';
+ if(generator){
+  const unfinishedLumber=o.chain==='tree'&&Math.max(0,remainingCount('Lumber')-qty('Lumber'))>0;
+  const otherRelevant=o.chain==='flower' && next.some(name=>Object.entries(BOARD_CHAINS).some(([k,d])=>d.title===name && goal(k).count>equivalentInventory(d,goal(k).tier)));
+  if(g.count>0 && short===0){label='COVERED';kind='covered';info='Already stocked enough for the selected generator goal.';}
+  else if(unfinishedLumber||otherRelevant){label='POTENTIALLY USEFUL';kind='useful';info=def.notes+' This generator has an outstanding related need, but the drop rate is not known.';}
+  else if(g.count>0 && unit>0){label='GOAL RELEVANT';kind='useful';info='It provides the selected generator tier. '+def.notes;}
+  else {label='GENERATOR';kind='unknown';info=def.notes+' Its energy value cannot be calculated from these screenshots.';}
+ }else if(g.count>0){
+  if(short<1e-8){label='COVERED';kind='covered';info='Your recorded stock meets this goal.';}
+  else if(unit===0){label='TOO HIGH A TIER';kind='skip';info='This higher-tier item cannot be split into the selected lower tier.';}
+  else if(unit+1e-8>=short){label='FINISHES GOAL';kind='finish';info='One unlock fills the outstanding merge-equivalent shortage, assuming you can complete the merges.';}
+  else{label='USEFUL';kind='useful';info=`Contributes ${(100*unit).toFixed(unit<0.1?1:0)}% of one T${g.tier} item. Whether energy is worth it versus normal crafting is not yet known.`;}
+ }else if(o.chain==='sword'){label='COVERED';kind='covered';info='Your recorded Sword inventory covers the remaining Soul Loop goal.';}
+ const perTarget=unit>0?Math.round(o.price/unit*100)/100:null;
+ return {label,kind,info,goal:g,have,short,unit,generator,perTarget};
+}
+function logShortcut(o,delta){
+ const d=data(),old=clampExtra(d.unlocks[o.id],0,9999),next=clampExtra(old+delta,0,9999),actual=next-old;
+ if(!actual)return;
+ const name=BOARD_CHAINS[o.chain].tiers[o.tier-1];
+ d.unlocks[o.id]=next;
+ if(actual<0 && qty(name)<-actual){alert('Not enough '+name+' left in inventory to undo this unlock. Update your inventory first.');d.unlocks[o.id]=old;return;}
+ setQty(name,qty(name)+actual);
+}
+function sourceNote(o){
+ if(o.chain==='sword')return 'The repeatable Soul Loop requests T7 Sword; this offer is T5.';
+ if(o.chain==='tree')return 'The generator can produce Lumber components, but its output is not priced per unit.';
+ if(o.chain==='flower')return 'Flower generates early Bonsai and Fireflies items; production rate unknown.';
+ return 'No automatically counted Soul Loop task for this line. Set a Steel Pass goal manually.';
+}
+function newOfferCard(o){
+ const d=BOARD_CHAINS[o.chain],st=offerStatus(o),count=clampExtra(data().unlocks[o.id],0,9999),eq=st.unit;
+ const priceLabel=st.perTarget!==null&&!st.generator?`${st.perTarget.toLocaleString()} ⚡ per T${st.goal.tier} equivalent`:'Generator yield not measured';
+ return `<article class="xshortcut ${st.kind}"><div class="xs-heading"><span class="xs-tile">T${o.tier}</span><div class="xs-title"><strong>${o.subject}</strong><small>${o.price} ⚡ unlock · timed board item</small></div><span class="xs-tag ${st.kind}">${st.label}</span></div>
+ <p>${st.info}</p><div class="xs-equivalent">${priceLabel}</div><div class="xs-note">${sourceNote(o)}</div>
+ <div class="xs-buttons"><span>Logged: <b>${count}</b></span><button type="button" data-xsundo="${o.id}" ${count===0?'disabled':''}>− Undo</button><button type="button" data-xslog="${o.id}">+ Log unlock</button></div></article>`;
+}
+function chainControls(){
+ return Object.entries(BOARD_CHAINS).map(([key,def])=>{
+  const g=goal(key),have=equivalentInventory(def,g.tier),pending=Math.max(0,g.count-have);
+  return `<div class="xs-goal"><div class="xs-goaltitle">${def.title}${key==='sword'&&!g.custom?' <em>Auto: Soul Loop</em>':''}</div>
+   <label>Target tier<select data-xs-tier="${key}">${def.tiers.map((n,i)=>`<option value="${i+1}" ${i+1===g.tier?'selected':''}>T${i+1} · ${n}</option>`).join('')}</select></label>
+   <label>Need<input data-xs-goal="${key}" type="number" min="0" max="30" value="${g.count}" inputmode="numeric" aria-label="Target quantity for ${def.title}"></label>
+   <span class="xs-inventory">Have ${Math.floor(have*100)/100} · short ${Math.round(pending*100)/100}</span>
+   <div class="xs-stocks"><label>Owned T${g.tier}<input type="number" inputmode="numeric" min="0" max="99999" value="${qty(def.tiers[g.tier-1])}" data-xs-owned="${key}" aria-label="Owned T${g.tier} ${def.title}"></label>
+    ${def.autoSoul?`<button type="button" data-xs-auto="${key}" ${!g.custom?'disabled':''}>Use Soul Loop target</button>`:''}</div></div>`;
+ }).join('');
+}
+function sectionMarkup(){
+ const open=state.boardShortcutsOpen===undefined?false:Boolean(state.boardShortcutsOpen);
+ const related=BOARD_OFFERS.filter(o=>['useful','finish'].includes(offerStatus(o).kind)).length;
+ return `<details class="board-shortcuts" id="boardShortcuts" ${open?'open':''}>
+ <summary><span><b>More locked shortcuts · 6 offers</b><small>Flower · Moon Fireflies · Knight Sword · Cube · Bonsai · Royal Tree</small></span><span class="board-count">${related} relevant</span></summary>
+ <div class="board-inner"><p class="board-warning"><b>Timed unlocks:</b> Your screenshots show both a timer and an energy price. If the countdown unlocks these items without spending, waiting may be better. These ratings do not assume a free timer outcome.</p>
+ <p class="board-copy">Energy costs are recorded from your screenshots. Targets and inventories are specific to <b>${esc(activeAccount().name)}</b>. Each merge doubles the item value for the next tier. Generator yields are not assumed.</p>
+ <div class="board-offers">${BOARD_OFFERS.map(newOfferCard).join('')}</div>
+ <details class="board-goals" id="boardGoals" ${state.boardGoalsOpen?'open':''}><summary>Set goals and inventory for all six item chains</summary><div class="xs-goals">${chainControls()}</div></details>
+ <p class="board-copy">A shortcut marked useful is not automatically the cheapest way to craft. Actual generator yields, normal energy costs, and the outcome of the visible timer have not been established. Existing 54-stage Steel Pass requirements are not automatically scanned.</p>
+ </div></details>`;
+}
+function mountNew(){
+ const screen=document.getElementById('contentScreen');if(!screen||state.view!=='shop')return;
+ const anchor=screen.querySelector('#toolsShortcut')||screen.querySelector('.offer-rotation');if(!anchor)return;
+ anchor.insertAdjacentHTML('afterend',sectionMarkup());
+ const section=screen.querySelector('#boardShortcuts');
+ section.addEventListener('toggle',()=>{state.boardShortcutsOpen=section.open;save()});
+ const goalsBox=screen.querySelector('#boardGoals');if(goalsBox)goalsBox.addEventListener('toggle',()=>{state.boardGoalsOpen=goalsBox.open;save()});
+ screen.querySelectorAll('[data-xslog]').forEach(b=>b.onclick=()=>logShortcut(BOARD_OFFERS.find(o=>o.id===b.dataset.xslog),1));
+ screen.querySelectorAll('[data-xsundo]').forEach(b=>b.onclick=()=>logShortcut(BOARD_OFFERS.find(o=>o.id===b.dataset.xsundo),-1));
+ screen.querySelectorAll('[data-xs-tier]').forEach(el=>el.onchange=()=>{const key=el.dataset.xsTier,g=goal(key);data().goals[key]={tier:clampExtra(el.value,1,BOARD_CHAINS[key].tiers.length),count:g.count};save();render()});
+ screen.querySelectorAll('[data-xs-goal]').forEach(el=>el.onchange=()=>{const key=el.dataset.xsGoal,g=goal(key);data().goals[key]={tier:g.tier,count:clampExtra(el.value,0,30)};save();render()});
+ screen.querySelectorAll('[data-xs-owned]').forEach(el=>el.onchange=()=>{const key=el.dataset.xsOwned,g=goal(key);setQty(BOARD_CHAINS[key].tiers[g.tier-1],el.value)});
+ screen.querySelectorAll('[data-xs-auto]').forEach(el=>el.onclick=()=>{delete data().goals[el.dataset.xsAuto];save();render()});
+}
+const oldShopView=window.shopView;
+window.shopView=function(){oldShopView();ensureKnownRecipes();mountNew()};
+const styles=`
+.board-shortcuts{margin:8px 0 10px;border:1px solid #8c6bba;border-radius:12px;background:#19142c;color:#f4e9ff;overflow:hidden}
+.board-shortcuts>summary{display:flex;cursor:pointer;gap:8px;justify-content:space-between;align-items:center;padding:10px;list-style:none}
+.board-shortcuts>summary::-webkit-details-marker{display:none}.board-shortcuts>summary span:first-child{display:grid;gap:2px}
+.board-shortcuts>summary b{font-size:13px}.board-shortcuts>summary small{font-size:10px;color:#dbbffa}.board-count{padding:4px 7px;background:#33234d;color:#dfc6ff;border-radius:15px;font-size:11px;font-weight:700;white-space:nowrap}
+.board-inner{padding:0 10px 10px;display:grid;gap:9px}.board-warning{background:#433017;border:1px solid #a6752d;padding:7px 9px;border-radius:8px;color:#ffdfa1;margin:0;font-size:11px;line-height:1.35}.board-copy{margin:0;font-size:11px;color:#cfc4e1;line-height:1.35}
+.board-offers{display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(min(100%,245px),1fr))}.xshortcut{display:grid;gap:6px;background:#271d42;border:1px solid #655486;border-radius:10px;padding:9px;align-content:start}.xshortcut.finish{border-color:#78d4a2}.xshortcut.useful{border-color:#e5be68}.xshortcut.covered,.xshortcut.skip{opacity:.78}
+.xs-heading{display:flex;gap:7px;align-items:center}.xs-tile{height:33px;min-width:33px;border-radius:8px;background:#533676;border:1px solid #ad88d3;display:grid;place-items:center;font-size:11px;font-weight:900}.xs-title{display:grid;gap:2px;min-width:0;flex:1}.xs-title strong{font-size:12px}.xs-title small{font-size:10px;color:#dcc6ff}.xs-tag{font-size:9px;font-weight:800;border-radius:7px;border:1px solid #7b638e;padding:3px 5px;white-space:nowrap;text-align:center;background:#3b2a50}.xs-tag.finish{border-color:#5cbf94;color:#dbffe7}.xs-tag.useful{border-color:#bb9543;color:#ffe7a8}.xs-tag.covered{border-color:#547f69;color:#c7f0d1}
+.xshortcut p{margin:0;font-size:11px;line-height:1.4;color:#e5d9f4}.xs-equivalent{font-size:11px;font-weight:750;color:#ffdf98}.xs-note{font-size:10px;line-height:1.3;color:#bbaccf}.xs-buttons{display:flex;align-items:center;gap:6px;margin-top:auto}.xs-buttons span{font-size:10px;flex:1}.xs-buttons button,.xs-stocks button{background:#493468;border:1px solid #936bb2;color:white;border-radius:7px;font-weight:700;font-size:10px;padding:7px}.xs-buttons button:disabled,.xs-stocks button:disabled{opacity:.45}
+.board-goals{border-top:1px solid #5f4a80;padding-top:8px}.board-goals>summary{cursor:pointer;font-size:12px;font-weight:700}.xs-goals{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,245px),1fr));gap:8px;margin-top:10px}.xs-goal{border-radius:10px;background:#2b2044;padding:8px;display:grid;grid-template-columns:minmax(0,1fr) 75px;gap:6px;border:1px solid #654d85}.xs-goaltitle{grid-column:1/-1;font-size:12px;font-weight:800}.xs-goaltitle em{font-style:normal;color:#f5c373;font-size:10px}.xs-goal label{display:grid;gap:3px;font-size:10px;color:#ded1f2}.xs-goal input,.xs-goal select{min-width:0;width:100%;padding:6px;background:#1b132c;border:1px solid #876bab;border-radius:7px;color:white;font-size:11px}.xs-goal select{max-width:100%}.xs-inventory{grid-column:1/-1;font-size:11px;color:#ead6a6}.xs-stocks{grid-column:1/-1;display:flex;align-items:end;gap:7px}.xs-stocks label{flex:1}.xs-stocks button{white-space:nowrap}
+@media(max-height:360px){.board-shortcuts>summary{padding:5px 8px}.board-shortcuts>summary b{font-size:12px}.board-shortcuts>summary small{font-size:9px}.board-count{padding:2px 5px;font-size:10px}}
+`;
+const sty=document.createElement('style');sty.textContent=styles;document.head.append(sty);
+if(state.view==='shop')render();
+})();
+</script>
+</body></html>
